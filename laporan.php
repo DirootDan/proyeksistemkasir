@@ -9,34 +9,25 @@ $hari_ini = date('Y-m-d');
 $bulan_ini = date('Y-m');
 $tahun_ini = date('Y');
 
-
-// Hapus 
+// --- LOGIKA HAPUS (Backend) ---
 if (isset($_POST['hapus_pilihan'])) {
     if (!empty($_POST['pilih'])) {
-        
         $ids = $_POST['pilih'];
-        
         $list_id = implode(',', $ids);
-        
         $db->exec("DELETE FROM transaksi WHERE id IN ($list_id)");
         
-        echo "<script>alert('Data terpilih berhasil dihapus!');</script>";
+        // Reset sequence jika kosong (opsional)
+        $cek_sisa = $db->query("SELECT COUNT(*) FROM transaksi")->fetchColumn();
+        if ($cek_sisa == 0) {
+            $db->exec("DELETE FROM sqlite_sequence WHERE name='transaksi'");
+        }
+        echo "<script>alert('Data terpilih berhasil dihapus!'); window.location=window.location.href;</script>";
     } else {
         echo "<script>alert('Tidak ada data yang dipilih!');</script>";
     }
 }
 
-// fitur hapus semua
-if (isset($_POST['hapus_semua'])) {
-    // Kosongkan tabel transaksi
-    $db->exec("DELETE FROM transaksi");
-    // Reset nomor ID biar kembali ke 1 (Opsional, biar rapi)
-    $db->exec("DELETE FROM sqlite_sequence WHERE name='transaksi'");
-    
-    echo "<script>alert('SEMUA RIWAYAT TELAH DIHAPUS BERSIH!');</script>";
-}
-
-
+// --- QUERY DATA STATISTIK ---
 $q_harian = $db->query("SELECT SUM(total_bayar) as total FROM transaksi WHERE tanggal = '$hari_ini'");
 $total_harian = $q_harian->fetch()['total'] ?: 0;
 
@@ -65,10 +56,37 @@ $semua_data = $db->query("SELECT * FROM transaksi ORDER BY tanggal DESC, jam DES
         .card h3 { margin: 0; color: #555; font-size: 14px; text-transform: uppercase; }
         .card p { font-size: 24px; font-weight: bold; color: #28a745; margin: 10px 0 0; }
         
-        /* Tombol & Navigasi */
+        /* Navigasi */
         .btn-back { display: inline-block; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 20px; }
-        .btn-danger { background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-warning { background: #ffc107; color: #333; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        
+        /* Area Header Tabel (Flexbox untuk tombol Kanan/Kiri) */
+        .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .header-area h3 { margin: 0; }
+        .button-group { display: flex; gap: 10px; }
+
+        /* Styling Tombol Hapus & Excel */
+        #btnHapus {
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: none;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        #btnHapus:disabled { background-color: #cccccc; cursor: not-allowed; }
+        
+        .btn-excel {
+            padding: 10px 20px;
+            background-color: #218838; /* Warna Hijau Excel */
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            display: inline-block;
+            border: none;
+        }
+        .btn-excel:hover { background-color: #1e7e34; }
         
         /* Tabel */
         table { width: 100%; background: white; border-collapse: collapse; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-top: 10px; }
@@ -78,19 +96,7 @@ $semua_data = $db->query("SELECT * FROM transaksi ORDER BY tanggal DESC, jam DES
         
         /* Checkbox  */
         input[type=checkbox] { transform: scale(1.3); cursor: pointer; }
-        
-        .action-bar { display: flex; justify-content: space-between; align-items: center; background: #e9ecef; padding: 10px; border-radius: 5px; }
     </style>
-    
-    <script>
-        
-        function toggle(source) {
-            checkboxes = document.getElementsByName('pilih[]');
-            for(var i=0, n=checkboxes.length;i<n;i++) {
-                checkboxes[i].checked = source.checked;
-            }
-        }
-    </script>
 </head>
 <body>
 
@@ -112,16 +118,27 @@ $semua_data = $db->query("SELECT * FROM transaksi ORDER BY tanggal DESC, jam DES
         </div>
     </div>
 
-    <form method="POST">
+    <form method="POST" id="formRiwayat">
         
-        <h3>📂 Kelola Riwayat Transaksi</h3>
-        
+        <div class="header-area">
+            <h3>📂 Kelola Riwayat Transaksi</h3>
+            
+            <div class="button-group">
+                <a href="export_excel.php" target="_blank" class="btn-excel">
+                    📥 Download Excel
+                </a>
+
+                <button type="submit" name="hapus_pilihan" id="btnHapus" disabled>
+                    Hapus
+                </button>
+            </div>
+        </div>
         
         <table>
             <thead>
                 <tr>
                     <th style="width: 40px; text-align: center;">
-                        <input type="checkbox" onclick="toggle(this)">
+                        <input type="checkbox" id="checkAll">
                     </th>
                     <th>Tanggal</th>
                     <th>Pelanggan</th>
@@ -133,7 +150,7 @@ $semua_data = $db->query("SELECT * FROM transaksi ORDER BY tanggal DESC, jam DES
                 <?php foreach($semua_data as $row): ?>
                 <tr>
                     <td style="text-align: center;">
-                        <input type="checkbox" name="pilih[]" value="<?= $row['id'] ?>">
+                        <input type="checkbox" name="pilih[]" value="<?= $row['id'] ?>" class="checkItem">
                     </td>
                     <td><?= $row['tanggal'] ?> <small>(<?= $row['jam'] ?>)</small></td>
                     <td><?= $row['nama_pelanggan'] ?></td>
@@ -144,7 +161,54 @@ $semua_data = $db->query("SELECT * FROM transaksi ORDER BY tanggal DESC, jam DES
             </tbody>
         </table>
         
-    </form> </div>
+    </form> 
+</div>
+
+<script>
+    const checkAll = document.getElementById('checkAll');
+    const checkItems = document.querySelectorAll('.checkItem');
+    const btnHapus = document.getElementById('btnHapus');
+
+    function updateButtonState() {
+        const checkedCount = document.querySelectorAll('.checkItem:checked').length;
+        const totalItems = checkItems.length;
+
+        if (checkedCount === 0) {
+            btnHapus.textContent = "Hapus";
+            btnHapus.disabled = true;
+            btnHapus.style.backgroundColor = "#cccccc"; 
+        } 
+        else if (checkedCount === totalItems) {
+            btnHapus.textContent = "Hapus Semua Data";
+            btnHapus.disabled = false;
+            btnHapus.style.backgroundColor = "#dc3545"; 
+        } 
+        else {
+            btnHapus.textContent = "Hapus (" + checkedCount + ") Item";
+            btnHapus.disabled = false;
+            btnHapus.style.backgroundColor = "#ffc107"; 
+            btnHapus.style.color = "black";
+        }
+    }
+
+    checkAll.addEventListener('change', function() {
+        const isChecked = this.checked;
+        checkItems.forEach(item => { item.checked = isChecked; });
+        updateButtonState();
+    });
+
+    checkItems.forEach(item => {
+        item.addEventListener('change', function() {
+            if (!this.checked) checkAll.checked = false;
+            if (document.querySelectorAll('.checkItem:checked').length === checkItems.length) checkAll.checked = true;
+            updateButtonState();
+        });
+    });
+
+    btnHapus.addEventListener('click', function(e) {
+        if(!confirm('Apakah Anda yakin ingin menghapus data ini?')) e.preventDefault();
+    });
+</script>
 
 </body>
 </html>
