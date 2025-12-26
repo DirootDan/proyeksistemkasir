@@ -75,7 +75,7 @@ try {
         try {
             $db->exec($sql);
         } catch (Exception $e) {
-            // Diam saja kalau kolom sudah ada (Error diabaikan)
+            
         }
     }
 
