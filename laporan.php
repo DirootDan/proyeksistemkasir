@@ -37,7 +37,7 @@ $data_laporan = $db->query("SELECT * FROM transaksi ORDER BY no_nota DESC")->fet
 <?php include 'header.php'; ?>
 
 <style>
-    /* CSS FIX: Mengikuti Variabel dari header.php */
+    /
     
     /* Sidebar Layout Override */
     .sidebar { 

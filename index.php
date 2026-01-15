@@ -38,8 +38,8 @@ if (isset($_POST['simpan'])) {
     $metode = $_POST['metode'];
     $layanan_pilih = $_POST['layanan'] ?? [];
     
-    // [BARU] Tangkap array ID promo yang dipilih (dicentang)
-    $promo_yang_dipilih = $_POST['pilih_promo'] ?? []; // Isinya array ID promo, misal: [1, 3]
+    // Tangkap array ID promo yang dipilih
+    $promo_yang_dipilih = $_POST['pilih_promo'] ?? []; 
 
     if(empty($layanan_pilih)) { 
         echo "<script>alert('⚠️ Keranjang masih kosong! Silakan pilih layanan.'); window.location='index.php';</script>"; exit; 
@@ -65,9 +65,7 @@ if (isset($_POST['simpan'])) {
         $subtotal_item = $harga_svc * $qty;
         $total_asli += $subtotal_item;
         
-        // [MODIFIKASI LOGIKA] 
-        // Cek 1: Layanan ini punya promo?
-        // Cek 2: Apakah ID promonya ada di dalam daftar yang dicentang kasir?
+        // Logika Diskon Backend
         if(isset($promo_map[$nama_svc])) {
             $data_promo = $promo_map[$nama_svc];
             $id_promonya = $data_promo['id'];
@@ -111,7 +109,7 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
 <?php include 'header.php'; ?>
 
 <style>
-    /* CSS SAMA SEPERTI SEBELUMNYA */
+    /* CSS Styling */
     .app-layout { display: flex; min-height: 100vh; background: #f1f5f9; font-family: 'Poppins', sans-serif; color: #334155; }
     .sidebar { width: 260px; background: white; border-right: 1px solid #e2e8f0; position: fixed; height: 100%; z-index: 10; }
     .brand-area { padding: 25px; text-align: center; border-bottom: 1px solid #f1f5f9; }
@@ -160,9 +158,8 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
     .total-display { font-size: 42px; font-weight: 800; margin: 15px 0; letter-spacing: -1px; }
     .promo-panel { background: #fffbeb; border: 1px solid #fcd34d; padding: 18px; border-radius: 14px; margin-bottom: 25px; }
     .promo-header { display: flex; align-items: center; gap: 8px; color: #b45309; font-weight: 700; margin-bottom: 12px; font-size: 14px; letter-spacing: 0.5px; }
-    .promo-grid { display: flex; flex-direction: column; gap: 10px; } /* Diubah jadi kolom biar checklist rapi */
+    .promo-grid { display: flex; flex-direction: column; gap: 10px; } 
     
-    /* STYLE BARU UNTUK ITEM PROMO CHECKBOX */
     .promo-item-row {
         background: white; border: 1px solid #fde047; border-radius: 10px; padding: 10px 14px;
         display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
@@ -207,7 +204,7 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                             <label class="promo-item-row">
                                 <input type="checkbox" name="pilih_promo[]" 
                                        value="<?= $p['id'] ?>" 
-                                       class="promo-chk trigger-calc" 
+                                       class="promo-chk" 
                                        checked 
                                        onclick="reCalc()">
                                 
@@ -297,7 +294,7 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                         <div class="svc-grid-modal" id="modalGrid">
                             <?php foreach($opsi_layanan as $l): ?>
                             <div class="svc-item" id="row_<?= $l['id'] ?>">
-                                <input type="checkbox" class="chk-big trigger-calc" 
+                                <input type="checkbox" class="chk-big trigger-calc chk-layanan" 
                                        name="layanan[]" 
                                        id="chk_<?= $l['id'] ?>"
                                        value="<?= $l['nama_layanan'] ?>|<?= $l['harga_default'] ?>|<?= $l['id'] ?>"
@@ -397,14 +394,15 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
         // 1. Ambil ID promo mana saja yang DICENTANG
         let selectedPromos = [];
         document.querySelectorAll('.promo-chk:checked').forEach(chk => {
-            selectedPromos.push(chk.value); // Menyimpan ID promo (e.g. "1", "3")
+            selectedPromos.push(chk.value); 
         });
 
-        let checkboxes = document.querySelectorAll('.trigger-calc');
+        // 2. Loop hanya pada CHECKBOX LAYANAN (class: chk-layanan)
+        let checkboxes = document.querySelectorAll('.chk-layanan'); // PERBAIKAN SELEKTOR
         let subtotal = 0, diskon = 0, count = 0;
 
         checkboxes.forEach(chk => {
-            if(chk.checked) { // Jika layanan ini dipilih
+            if(chk.checked) { 
                 count++;
                 let id = chk.getAttribute('data-id');
                 let harga = parseInt(chk.getAttribute('data-harga'));
@@ -413,10 +411,9 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                 let itemTotal = harga * qty;
                 subtotal += itemTotal;
 
-                // 2. Cek apakah layanan ini punya promo?
+                // Cek Promo
                 let promoId = chk.getAttribute('data-promo-id');
                 
-                // 3. LOGIKA UTAMA: Apakah ID promo layanan ini ada di daftar yang dicentang?
                 if(promoId != '0' && selectedPromos.includes(promoId)) {
                     let tipe = chk.getAttribute('data-diskon-tipe');
                     let nilai = parseInt(chk.getAttribute('data-diskon-nilai'));
@@ -437,7 +434,8 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
     }
 
     function updatePreview() {
-        let checkboxes = document.querySelectorAll('.trigger-calc:checked');
+        // Hanya ambil checkbox LAYANAN yang dicentang
+        let checkboxes = document.querySelectorAll('.chk-layanan:checked'); // PERBAIKAN SELEKTOR
         let container = document.getElementById('previewContainer');
         
         if(checkboxes.length === 0) {

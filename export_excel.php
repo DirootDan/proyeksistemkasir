@@ -1,11 +1,12 @@
 <?php
-
+// FILE: export_excel.php
+// VERSI FINAL 2.0: Ditambahkan Kolom Diskon Persen & Rupiah
 require_once 'koneksi.php';
 
 // Validasi Login
 if (!isset($_COOKIE['user_id'])) { die("Akses Ditolak. Silakan login."); }
 
-// BERSIHKAN BUFFER (Penting untuk mencegah error header)
+// BERSIHKAN BUFFER
 if (ob_get_contents()) ob_end_clean();
 
 // 1. TANGKAP INPUT FILTER
@@ -45,14 +46,20 @@ if (!empty($conditions)) {
 }
 $sql .= " ORDER BY tanggal ASC, jam ASC";
 
-// Eksekusi
 $stmt = $db->prepare($sql);
 $stmt->execute();
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Hitung Total
+// Hitung Total Omzet
 $total_omzet = 0;
 foreach($data as $d) { $total_omzet += $d['total_bayar']; }
+
+// AMBIL HARGA MASTER SEBAGAI PEMBANDING
+$ref_harga = [];
+$q_harga = $db->query("SELECT nama_layanan, harga_default FROM master_layanan");
+while($h = $q_harga->fetch(PDO::FETCH_ASSOC)){
+    $ref_harga[$h['nama_layanan']] = $h['harga_default'];
+}
 
 // 3. SET HEADER EXCEL
 $filename = "Laporan_Salon_" . $nama_file_suffix . ".xls";
@@ -75,7 +82,6 @@ header("Expires: 0");
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .text-bold { font-weight: bold; }
-        /* Style biar baris baru di dalam sel Excel rapi */
         br { mso-data-placement:same-cell; }
     </style>
 </head>
@@ -92,9 +98,10 @@ header("Expires: 0");
                 <th>Waktu</th>
                 <th>Pelanggan</th>
                 <th>Detail Layanan</th>
-                <th>Dikerjakan Oleh (Terapis)</th> <th>Metode</th>
-                <th>Diskon</th>
-                <th>Total Bayar</th>
+                <th>Dikerjakan Oleh</th>
+                <th>Nominal (Rp)</th>
+                <th>Metode</th>
+                <th>Diskon (%)</th> <th>Diskon (Rp)</th> <th>Total Bayar</th>
             </tr>
         </thead>
         <tbody>
@@ -102,32 +109,80 @@ header("Expires: 0");
             if(count($data) > 0):
                 $no = 1;
                 foreach($data as $row):
-                    // LOGIKA PARSING TEXT DATABASE
-                    $items = explode(',', $row['jenis_layanan']);
+                    $raw_items = explode(',', $row['jenis_layanan']);
                     
+                    // --- TAHAP 1: Hitung Estimasi Total Normal ---
+                    $temp_items = [];
+                    $total_estimasi_master = 0;
+
+                    foreach($raw_items as $raw) {
+                        $raw = trim($raw);
+                        $parts = explode('[', $raw);
+                        $full_nama_layanan = trim($parts[0]); 
+                        $stylist = (isset($parts[1])) ? str_replace(']', '', $parts[1]) : '-';
+                        
+                        $qty = 1; $real_nama = $full_nama_layanan; 
+                        if (strpos($full_nama_layanan, '(') !== false) {
+                            $split_qty = explode('(', $full_nama_layanan);
+                            $real_nama = trim($split_qty[0]); 
+                            $str_qty = isset($split_qty[1]) ? $split_qty[1] : ''; 
+                            $qty = (int) filter_var($str_qty, FILTER_SANITIZE_NUMBER_INT);
+                        }
+                        if($qty < 1) $qty = 1;
+
+                        // Ambil harga normal dari master
+                        $harga_master = isset($ref_harga[$real_nama]) ? $ref_harga[$real_nama] : 0;
+                        $subtotal_master = $harga_master * $qty;
+                        $total_estimasi_master += $subtotal_master;
+
+                        $temp_items[] = [
+                            'nama' => $full_nama_layanan,
+                            'stylist' => $stylist,
+                            'subtotal_master' => $subtotal_master
+                        ];
+                    }
+
+                    // --- TAHAP 2: Hitung Rasio & Diskon Real ---
+                    // Harga Asli di DB (Gross)
+                    $harga_gross = $row['harga']; 
+                    // Total yang dibayar (Net)
+                    $harga_net = $row['total_bayar'];
+
+                    // Hitung Diskon Real (Selisih Gross - Net)
+                    // Ini akan menangkap Diskon Promo MAUPUN Diskon Manual Supervisor
+                    $diskon_rupiah = $harga_gross - $harga_net;
+                    
+                    // Hitung Persentase Diskon
+                    $diskon_persen = 0;
+                    if($harga_gross > 0 && $diskon_rupiah > 0) {
+                        $diskon_persen = ($diskon_rupiah / $harga_gross) * 100;
+                    }
+
+                    // Hitung Rasio untuk pembagian nominal per item
+                    $rasio = ($total_estimasi_master > 0) ? ($harga_gross / $total_estimasi_master) : 0;
+
+                    // --- TAHAP 3: Tampilkan Data ---
                     $arr_layanan = [];
                     $arr_terapis = [];
+                    $arr_nominal = [];
 
-                    foreach($items as $item) {
-                        $item = trim($item);
-                        // Cek apakah ada tanda kurung siku [Nama]
-                        if (strpos($item, '[') !== false) {
-                            $parts = explode('[', $item);
-                            $nama_svc = trim($parts[0]);
-                            $nama_sty = str_replace(']', '', $parts[1]);
-                            
-                            $arr_layanan[] = "• " . $nama_svc;
-                            $arr_terapis[] = "• " . $nama_sty;
-                        } else {
-                            // Jika data lama tidak ada nama terapisnya
-                            $arr_layanan[] = "• " . $item;
-                            $arr_terapis[] = "-";
-                        }
+                    foreach($temp_items as $item) {
+                        // Jika ada override harga total, nominal per item ikut turun (proporsional)
+                        // Agar total nominal item = total bayar (jika tidak ada diskon kolom)
+                        // TAPI: Karena kita menampilkan kolom DISKON terpisah, 
+                        // Maka Nominal Item sebaiknya menampilkan HARGA ASLI (Gross)
+                        
+                        // KITA PAKAI HARGA GROSS (ASLI) DI SINI:
+                        $harga_tampil = $item['subtotal_master'] * $rasio; 
+
+                        $arr_layanan[] = "• " . $item['nama'];
+                        $arr_terapis[] = "• " . $item['stylist'];
+                        $arr_nominal[] = "Rp " . number_format($harga_tampil);
                     }
                     
-                    // Gabungkan array jadi string dengan baris baru (Enter)
                     $display_layanan = implode('<br>', $arr_layanan);
                     $display_terapis = implode('<br>', $arr_terapis);
+                    $display_nominal = implode('<br>', $arr_nominal);
             ?>
             <tr>
                 <td class="text-center"><?= $no++ ?></td>
@@ -135,21 +190,29 @@ header("Expires: 0");
                 <td class="text-center"><?= $row['tanggal'] ?><br><small><?= $row['jam'] ?></small></td>
                 <td><?= $row['nama_pelanggan'] ?></td>
                 
-                <td><?= $display_layanan ?></td>
-                
-                <td><?= $display_terapis ?></td>
+                <td style="vertical-align:top;"><?= $display_layanan ?></td>
+                <td style="vertical-align:top;"><?= $display_terapis ?></td>
+                <td class="text-right" style="vertical-align:top;"><?= $display_nominal ?></td>
 
                 <td class="text-center"><?= $row['metode_pembayaran'] ?></td>
-                <td class="text-right"><?= $row['diskon'] > 0 ? number_format($row['diskon']) : '-' ?></td>
+                
+                <td class="text-center">
+                    <?= $diskon_persen > 0 ? round($diskon_persen, 1) . '%' : '-' ?>
+                </td>
+
+                <td class="text-right">
+                    <?= $diskon_rupiah > 0 ? number_format($diskon_rupiah) : '-' ?>
+                </td>
+
                 <td class="text-right text-bold">Rp <?= number_format($row['total_bayar']) ?></td>
             </tr>
             <?php endforeach; else: ?>
-            <tr><td colspan="9" class="text-center">Data tidak ditemukan.</td></tr>
+            <tr><td colspan="11" class="text-center">Data tidak ditemukan.</td></tr>
             <?php endif; ?>
         </tbody>
         <tfoot>
             <tr class="footer-row">
-                <td colspan="8" class="text-right">TOTAL OMZET</td>
+                <td colspan="10" class="text-right">TOTAL OMZET</td>
                 <td class="text-right">Rp <?= number_format($total_omzet) ?></td>
             </tr>
         </tfoot>
