@@ -1,12 +1,13 @@
 <?php
 // FILE: export_excel.php
-// VERSI FINAL 2.0: Ditambahkan Kolom Diskon Persen & Rupiah
+// VERSI FINAL: Layout Logis (Harga Normal -> Diskon -> Total)
+
 require_once 'koneksi.php';
 
 // Validasi Login
 if (!isset($_COOKIE['user_id'])) { die("Akses Ditolak. Silakan login."); }
 
-// BERSIHKAN BUFFER
+// BERSIHKAN BUFFER (Mencegah file korup)
 if (ob_get_contents()) ob_end_clean();
 
 // 1. TANGKAP INPUT FILTER
@@ -50,11 +51,11 @@ $stmt = $db->prepare($sql);
 $stmt->execute();
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Hitung Total Omzet
+// Hitung Total Omzet (Total Akhir/Net)
 $total_omzet = 0;
 foreach($data as $d) { $total_omzet += $d['total_bayar']; }
 
-// AMBIL HARGA MASTER SEBAGAI PEMBANDING
+// AMBIL HARGA MASTER (Untuk Referensi Harga Satuan)
 $ref_harga = [];
 $q_harga = $db->query("SELECT nama_layanan, harga_default FROM master_layanan");
 while($h = $q_harga->fetch(PDO::FETCH_ASSOC)){
@@ -74,14 +75,15 @@ header("Expires: 0");
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: Arial, sans-serif; }
+        body { font-family: Arial, sans-serif; font-size: 12px; }
         table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #000000; padding: 8px; vertical-align: top; }
-        .header-row { background-color: #ec4899; color: #ffffff; font-weight: bold; text-align: center; }
+        th, td { border: 1px solid #000000; padding: 6px; vertical-align: top; }
+        .header-row { background-color: #ec4899; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle; }
         .footer-row { background-color: #fce7f3; font-weight: bold; }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
         .text-bold { font-weight: bold; }
+        /* Fix untuk break line di Excel */
         br { mso-data-placement:same-cell; }
     </style>
 </head>
@@ -93,15 +95,17 @@ header("Expires: 0");
     <table>
         <thead>
             <tr class="header-row">
-                <th>No</th>
-                <th>No Nota</th>
-                <th>Waktu</th>
-                <th>Pelanggan</th>
-                <th>Detail Layanan</th>
-                <th>Dikerjakan Oleh</th>
-                <th>Nominal (Rp)</th>
-                <th>Metode</th>
-                <th>Diskon (%)</th> <th>Diskon (Rp)</th> <th>Total Bayar</th>
+                <th width="30">No</th>
+                <th width="80">No Nota</th>
+                <th width="100">Waktu</th>
+                <th width="120">Pelanggan</th>
+                <th width="150">Detail Layanan</th>
+                <th width="120">Dikerjakan Oleh</th>
+                <th width="100">Harga Normal (Rp)</th>
+                <th width="80">Metode</th>
+                <th width="60">Diskon (%)</th> 
+                <th width="80">Diskon (Rp)</th> 
+                <th width="100">Total Bayar</th>
             </tr>
         </thead>
         <tbody>
@@ -109,9 +113,10 @@ header("Expires: 0");
             if(count($data) > 0):
                 $no = 1;
                 foreach($data as $row):
+                    // -- LOGIKA PARSING LAYANAN --
                     $raw_items = explode(',', $row['jenis_layanan']);
                     
-                    // --- TAHAP 1: Hitung Estimasi Total Normal ---
+                    // 1. Hitung Estimasi Total Master (Harga Standar Katalog)
                     $temp_items = [];
                     $total_estimasi_master = 0;
 
@@ -121,6 +126,7 @@ header("Expires: 0");
                         $full_nama_layanan = trim($parts[0]); 
                         $stylist = (isset($parts[1])) ? str_replace(']', '', $parts[1]) : '-';
                         
+                        // Cek qty jika ada format "Nama Layanan (2)"
                         $qty = 1; $real_nama = $full_nama_layanan; 
                         if (strpos($full_nama_layanan, '(') !== false) {
                             $split_qty = explode('(', $full_nama_layanan);
@@ -130,7 +136,7 @@ header("Expires: 0");
                         }
                         if($qty < 1) $qty = 1;
 
-                        // Ambil harga normal dari master
+                        // Ambil harga dari referensi master
                         $harga_master = isset($ref_harga[$real_nama]) ? $ref_harga[$real_nama] : 0;
                         $subtotal_master = $harga_master * $qty;
                         $total_estimasi_master += $subtotal_master;
@@ -142,37 +148,34 @@ header("Expires: 0");
                         ];
                     }
 
-                    // --- TAHAP 2: Hitung Rasio & Diskon Real ---
-                    // Harga Asli di DB (Gross)
+                    // 2. Hitung Matematika Diskon & Harga Asli
+                    // $row['harga'] = Subtotal Gross (Sebelum Diskon)
+                    // $row['total_bayar'] = Grand Total Net (Setelah Diskon)
+                    
                     $harga_gross = $row['harga']; 
-                    // Total yang dibayar (Net)
                     $harga_net = $row['total_bayar'];
 
-                    // Hitung Diskon Real (Selisih Gross - Net)
-                    // Ini akan menangkap Diskon Promo MAUPUN Diskon Manual Supervisor
+                    // Rumus Diskon Rupiah
                     $diskon_rupiah = $harga_gross - $harga_net;
                     
-                    // Hitung Persentase Diskon
+                    // Rumus Diskon Persen
                     $diskon_persen = 0;
                     if($harga_gross > 0 && $diskon_rupiah > 0) {
                         $diskon_persen = ($diskon_rupiah / $harga_gross) * 100;
                     }
 
-                    // Hitung Rasio untuk pembagian nominal per item
+                    // Rasio: Digunakan jika user mengubah harga manual (override) tapi bukan via kolom diskon
+                    // Agar harga per item tetap proporsional terhadap Subtotal Gross
                     $rasio = ($total_estimasi_master > 0) ? ($harga_gross / $total_estimasi_master) : 0;
 
-                    // --- TAHAP 3: Tampilkan Data ---
+                    // 3. Siapkan Tampilan Per Baris
                     $arr_layanan = [];
                     $arr_terapis = [];
                     $arr_nominal = [];
 
                     foreach($temp_items as $item) {
-                        // Jika ada override harga total, nominal per item ikut turun (proporsional)
-                        // Agar total nominal item = total bayar (jika tidak ada diskon kolom)
-                        // TAPI: Karena kita menampilkan kolom DISKON terpisah, 
-                        // Maka Nominal Item sebaiknya menampilkan HARGA ASLI (Gross)
-                        
-                        // KITA PAKAI HARGA GROSS (ASLI) DI SINI:
+                        // Harga Tampil = Harga Item Master * Rasio ke Harga Gross Transaksi
+                        // Ini menampilkan "Harga Satuan Sebelum Diskon"
                         $harga_tampil = $item['subtotal_master'] * $rasio; 
 
                         $arr_layanan[] = "• " . $item['nama'];
@@ -187,7 +190,7 @@ header("Expires: 0");
             <tr>
                 <td class="text-center"><?= $no++ ?></td>
                 <td class="text-center" style="mso-number-format:'\@';">#<?= str_pad($row['no_nota'], 4, '0', STR_PAD_LEFT) ?></td>
-                <td class="text-center"><?= $row['tanggal'] ?><br><small><?= $row['jam'] ?></small></td>
+                <td class="text-center"><?= date('d/m/Y', strtotime($row['tanggal'])) ?><br><small><?= $row['jam'] ?></small></td>
                 <td><?= $row['nama_pelanggan'] ?></td>
                 
                 <td style="vertical-align:top;"><?= $display_layanan ?></td>
@@ -197,7 +200,7 @@ header("Expires: 0");
                 <td class="text-center"><?= $row['metode_pembayaran'] ?></td>
                 
                 <td class="text-center">
-                    <?= $diskon_persen > 0 ? round($diskon_persen, 1) . '%' : '-' ?>
+                    <?= $diskon_persen > 0.1 ? round($diskon_persen, 1) . '%' : '-' ?>
                 </td>
 
                 <td class="text-right">
