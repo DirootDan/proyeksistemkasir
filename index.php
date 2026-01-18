@@ -65,7 +65,7 @@ if (isset($_POST['simpan'])) {
         $subtotal_item = $harga_svc * $qty;
         $total_asli += $subtotal_item;
         
-        // Logika Diskon Backend
+        // Logika Diskon Promo (Otomatis)
         if(isset($promo_map[$nama_svc])) {
             $data_promo = $promo_map[$nama_svc];
             $id_promonya = $data_promo['id'];
@@ -87,11 +87,20 @@ if (isset($_POST['simpan'])) {
 
     $final_string = implode(', ', $final_services_parts);
 
+    // --- BAGIAN BARU: LOGIKA DISKON MANUAL ---
+    // Ambil input diskon manual dari form
+    $diskon_manual = (int)($_POST['diskon_manual'] ?? 0);
+    // Tambahkan ke total diskon yang sudah ada (dari promo)
+    $total_diskon += $diskon_manual;
+    // ------------------------------------------
+
     if($user_role == 'supervisor' && !empty($_POST['harga_manual'])) {
         $total_bayar = $_POST['harga_manual'];
     } else {
         $total_bayar = $total_asli - $total_diskon;
     }
+    
+    // Pastikan tidak minus
     if($total_bayar < 0) $total_bayar = 0;
 
     $max_nota = $db->query("SELECT MAX(no_nota) FROM transaksi")->fetchColumn();
@@ -254,6 +263,14 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                     </div>
 
                     <div class="total-panel">
+                        <label style="font-size:12px; font-weight:bold; color:white; margin-bottom:5px; display:block; text-align:left; opacity:0.8;">
+                            🎟️ Potongan Manual (Rp)
+                        </label>
+                        <input type="number" id="diskon_manual" name="diskon_manual" 
+                            class="form-input" 
+                            placeholder="0" 
+                            style="color:#334155; font-weight:bold; text-align:right;"
+                            onkeyup="reCalc()" onchange="reCalc()">
                         <small style="text-transform:uppercase; letter-spacing:1px; opacity:0.8;">Total Tagihan</small>
                         <div class="total-display" id="txt_total">Rp 0</div>
                         <div style="font-size:13px; opacity:0.7; border-top:1px solid #334155; padding-top:15px; margin-top:5px;" id="txt_detail">
@@ -398,7 +415,7 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
         });
 
         // 2. Loop hanya pada CHECKBOX LAYANAN (class: chk-layanan)
-        let checkboxes = document.querySelectorAll('.chk-layanan'); // PERBAIKAN SELEKTOR
+        let checkboxes = document.querySelectorAll('.chk-layanan'); 
         let subtotal = 0, diskon = 0, count = 0;
 
         checkboxes.forEach(chk => {
@@ -424,18 +441,25 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
             }
         });
 
-        let total = subtotal - diskon;
+        // --- UPDATE DISKON MANUAL ---
+        let manualInput = document.getElementById('diskon_manual');
+        let manualDisc = manualInput ? (parseInt(manualInput.value) || 0) : 0;
+        
+        // Gabungkan diskon promo + manual
+        let totalDiskon = diskon + manualDisc;
+
+        let total = subtotal - totalDiskon;
         if(total < 0) total = 0;
 
         document.getElementById('txt_total').innerText = "Rp " + total.toLocaleString();
-        document.getElementById('txt_detail').innerText = "Subtotal: " + subtotal.toLocaleString() + " | Diskon: " + diskon.toLocaleString();
+        document.getElementById('txt_detail').innerText = "Subtotal: " + subtotal.toLocaleString() + " | Diskon: " + totalDiskon.toLocaleString();
         document.getElementById('countSelected').innerText = count + " item";
         updatePreview();
     }
 
     function updatePreview() {
         // Hanya ambil checkbox LAYANAN yang dicentang
-        let checkboxes = document.querySelectorAll('.chk-layanan:checked'); // PERBAIKAN SELEKTOR
+        let checkboxes = document.querySelectorAll('.chk-layanan:checked'); 
         let container = document.getElementById('previewContainer');
         
         if(checkboxes.length === 0) {
