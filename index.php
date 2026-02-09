@@ -32,16 +32,16 @@ foreach($qp->fetchAll(PDO::FETCH_ASSOC) as $p) {
     foreach($targets as $t) { $promo_map[trim($t)] = $p; }
 }
 
-// Proses Simpan
+// --- PROSES SIMPAN (VERSI BARU: CART SYSTEM) ---
 if (isset($_POST['simpan'])) {
     $nama = $_POST['nama'];
     $metode = $_POST['metode'];
-    $layanan_pilih = $_POST['layanan'] ?? [];
     
-    // Tangkap array ID promo yang dipilih
+    // UBAHAN UTAMA: Menangkap array 'cart' bukan 'layanan'
+    $cart_items = $_POST['cart'] ?? []; 
     $promo_yang_dipilih = $_POST['pilih_promo'] ?? []; 
 
-    if(empty($layanan_pilih)) { 
+    if(empty($cart_items)) { 
         echo "<script>alert('⚠️ Keranjang masih kosong! Silakan pilih layanan.'); window.location='index.php';</script>"; exit; 
     }
 
@@ -49,60 +49,48 @@ if (isset($_POST['simpan'])) {
     $total_diskon = 0;
     $final_services_parts = [];
 
-    foreach($layanan_pilih as $val) {
-        $parts = explode('|', $val); 
-        $nama_svc = $parts[0];
-        $harga_svc = (int)$parts[1];
-        $id_svc = $parts[2];
+    // Loop item keranjang (Setiap item adalah baris unik)
+    foreach($cart_items as $item) {
+        $nama_svc = $item['nama_layanan'];
+        $harga_svc= (int)$item['harga'];
+        $stylist  = $item['terapis'] ?? '-';
         
-        $input_sty = "terapis_" . $id_svc;
-        $input_qty = "qty_" . $id_svc; 
-        
-        $stylist = $_POST[$input_sty] ?? '-';
-        $qty = (int)($_POST[$input_qty] ?? 1); 
-        if($qty < 1) $qty = 1;
-
-        $subtotal_item = $harga_svc * $qty;
+        // Qty dianggap 1 per baris agar bisa beda terapis
+        $subtotal_item = $harga_svc; 
         $total_asli += $subtotal_item;
         
-        // Logika Diskon Promo (Otomatis)
+        // Logika Diskon Promo
         if(isset($promo_map[$nama_svc])) {
             $data_promo = $promo_map[$nama_svc];
-            $id_promonya = $data_promo['id'];
-
-            if(in_array($id_promonya, $promo_yang_dipilih)) {
+            if(in_array($data_promo['id'], $promo_yang_dipilih)) {
                 if($data_promo['jenis_diskon'] == 'persen') {
                     $total_diskon += $subtotal_item * ($data_promo['nilai_diskon'] / 100);
                 } else {
-                    $total_diskon += $data_promo['nilai_diskon'] * $qty;
+                    $total_diskon += $data_promo['nilai_diskon'];
                 }
             }
         }
 
+        // Format String Nota
         $str = $nama_svc;
-        if($qty > 1) $str .= " ({$qty}x)"; 
         if($stylist && $stylist !== '-') $str .= " [" . $stylist . "]";
         $final_services_parts[] = $str;
     }
 
     $final_string = implode(', ', $final_services_parts);
 
-    // --- BAGIAN BARU: LOGIKA DISKON MANUAL ---
-    // Ambil input diskon manual dari form
+    // Hitungan Akhir + Manual Diskon
     $diskon_manual = (int)($_POST['diskon_manual'] ?? 0);
-    // Tambahkan ke total diskon yang sudah ada (dari promo)
     $total_diskon += $diskon_manual;
-    // ------------------------------------------
 
     if($user_role == 'supervisor' && !empty($_POST['harga_manual'])) {
         $total_bayar = $_POST['harga_manual'];
     } else {
         $total_bayar = $total_asli - $total_diskon;
     }
-    
-    // Pastikan tidak minus
     if($total_bayar < 0) $total_bayar = 0;
 
+    // Simpan DB
     $max_nota = $db->query("SELECT MAX(no_nota) FROM transaksi")->fetchColumn();
     $next = $max_nota ? $max_nota + 1 : 1;
 
@@ -144,14 +132,13 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
     .svc-grid-modal { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 15px; }
     .svc-item { background: white; border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; display: flex; align-items: center; gap: 15px; cursor: pointer; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
     .svc-item:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
-    .svc-item.active { border-color: var(--primary); background: #fff1f2; box-shadow: 0 0 0 2px var(--primary); }
     .svc-name { font-weight: 600; font-size: 15px; color: #1e293b; margin-bottom: 4px; }
     .svc-price { color: var(--primary); font-weight: 700; font-size: 14px; }
-    .chk-big { width: 22px; height: 22px; accent-color: var(--primary); cursor: pointer; }
-    .qty-input { width: 55px; text-align: center; border: 1px solid #cbd5e1; padding: 8px; border-radius: 8px; font-weight: bold; }
+    
     .sty-select { padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; width: 130px; background: white; }
-    .preview-list { min-height: 100px; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 15px; margin-top: 15px; background: #f8fafc; }
+    
     .preview-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #e2e8f0; background: #fff; margin-bottom: 8px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    
     .btn-open-modal { width: 100%; padding: 18px; background: white; border: 2px dashed var(--primary); color: var(--primary); border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
     .btn-open-modal:hover { background: #fdf2f8; transform: translateY(-1px); }
     .btn-close-modal { background: var(--primary); color: white; border: none; padding: 12px 30px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14px; }
@@ -233,16 +220,14 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                     <div class="card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                             <h3 style="margin:0;">🛒 Layanan Terpilih</h3>
-                            <small style="color:#64748b; background:#f1f5f9; padding:5px 10px; border-radius:20px; font-weight:600;" id="countSelected">0 item</small>
+                            <button type="button" class="btn-open-modal" onclick="toggleModal(true)" style="width:auto; padding:8px 15px; font-size:12px;">
+                                + Tambah Layanan
+                            </button>
                         </div>
 
-                        <button type="button" class="btn-open-modal" onclick="toggleModal(true)">
-                            <span style="font-size:20px;">🔍</span> KLIK UNTUK CARI & TAMBAH LAYANAN
-                        </button>
-
-                        <div class="preview-list" id="previewContainer">
-                            <div style="text-align:center; color:#94a3b8; margin-top:20px;">
-                                Belum ada layanan.<br>Klik tombol di atas untuk memilih.
+                        <div id="cartContainer" style="min-height: 100px; display:flex; flex-direction:column; gap:10px;">
+                            <div style="text-align:center; color:#94a3b8; padding:20px;" id="emptyCartMsg">
+                                Keranjang masih kosong.<br>Klik tombol tambah di atas.
                             </div>
                         </div>
                     </div>
@@ -302,7 +287,7 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                     <div class="modal-header">
                         <div>
                             <h2 style="margin:0; color:#1e293b;">Pilih Layanan</h2>
-                            <small style="color:#64748b;">Centang layanan yang diinginkan</small>
+                            <small style="color:#64748b;">Klik layanan untuk menambah ke keranjang</small>
                         </div>
                         <input type="text" id="searchBox" class="search-modal" placeholder="Ketik nama layanan..." onkeyup="filterServices()" style="width: 300px;">
                     </div>
@@ -310,44 +295,26 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
                     <div class="modal-body">
                         <div class="svc-grid-modal" id="modalGrid">
                             <?php foreach($opsi_layanan as $l): ?>
-                            <div class="svc-item" id="row_<?= $l['id'] ?>">
-                                <input type="checkbox" class="chk-big trigger-calc chk-layanan" 
-                                       name="layanan[]" 
-                                       id="chk_<?= $l['id'] ?>"
-                                       value="<?= $l['nama_layanan'] ?>|<?= $l['harga_default'] ?>|<?= $l['id'] ?>"
-                                       data-id="<?= $l['id'] ?>"
-                                       data-nama="<?= $l['nama_layanan'] ?>"
-                                       data-harga="<?= $l['harga_default'] ?>"
-                                       data-promo-id="<?= isset($promo_map[$l['nama_layanan']]) ? $promo_map[$l['nama_layanan']]['id'] : 0 ?>"
-                                       data-diskon-tipe="<?= $promo_map[$l['nama_layanan']]['jenis_diskon'] ?? '' ?>"
-                                       data-diskon-nilai="<?= $promo_map[$l['nama_layanan']]['nilai_diskon'] ?? 0 ?>"
-                                       onclick="updateState(<?= $l['id'] ?>)">
-                                
+                            <div class="svc-item" onclick="addToCart(
+                                    <?= $l['id'] ?>, 
+                                    '<?= addslashes($l['nama_layanan']) ?>', 
+                                    <?= $l['harga_default'] ?>, 
+                                    <?= isset($promo_map[$l['nama_layanan']]) ? $promo_map[$l['nama_layanan']]['id'] : 0 ?>,
+                                    '<?= $promo_map[$l['nama_layanan']]['jenis_diskon'] ?? '' ?>',
+                                    <?= $promo_map[$l['nama_layanan']]['nilai_diskon'] ?? 0 ?>
+                                )">
                                 <div style="flex:1">
                                     <div class="svc-name"><?= $l['nama_layanan'] ?></div>
                                     <div class="svc-price">Rp <?= number_format($l['harga_default']) ?></div>
                                 </div>
-
-                                <div style="display:flex; align-items:center; gap:5px;">
-                                    <small style="font-weight:600; color:#64748b;">Qty</small>
-                                    <input type="number" name="qty_<?= $l['id'] ?>" id="qty_<?= $l['id'] ?>" 
-                                           value="1" min="1" class="qty-input" disabled 
-                                           onchange="reCalc()" onkeyup="reCalc()">
-                                </div>
-
-                                <select name="terapis_<?= $l['id'] ?>" id="sty_<?= $l['id'] ?>" class="sty-select" disabled>
-                                    <option value="-">Pilih Terapis</option>
-                                    <?php foreach($list_terapis as $t): ?>
-                                        <option value="<?= $t['nama_terapis'] ?>"><?= $t['nama_terapis'] ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <div style="background:var(--primary); color:white; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:50%; font-weight:bold;">+</div>
                             </div>
                             <?php endforeach; ?>
                         </div>
                     </div>
 
                     <div class="modal-footer">
-                        <button type="button" class="btn-close-modal" onclick="toggleModal(false)">SELESAI & TUTUP</button>
+                        <button type="button" class="btn-close-modal" onclick="toggleModal(false)">TUTUP</button>
                     </div>
                 </div>
             </div>
@@ -377,9 +344,15 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
 </div>
 
 <script>
+    // Data Terapis dari PHP ke JS
+    const terapisData = [
+        <?php foreach($list_terapis as $t): ?>
+        {nama: "<?= $t['nama_terapis'] ?>"},
+        <?php endforeach; ?>
+    ];
+
     function toggleModal(show) {
         document.getElementById('serviceModal').style.display = show ? 'flex' : 'none';
-        if(!show) updatePreview(); 
     }
 
     function filterServices() {
@@ -390,105 +363,108 @@ $data_transaksi = $db->query("SELECT * FROM transaksi ORDER BY id DESC LIMIT 5")
         });
     }
 
-    function updateState(id) {
-        let chk = document.getElementById('chk_' + id);
-        let qty = document.getElementById('qty_' + id);
-        let sty = document.getElementById('sty_' + id);
-        let row = document.getElementById('row_' + id);
+    // --- FUNGSI UTAMA: MENAMBAH ITEM KE KERANJANG ---
+    function addToCart(id, nama, harga, promoId, diskonTipe, diskonNilai) {
+        document.getElementById('emptyCartMsg').style.display = 'none';
+        const container = document.getElementById('cartContainer');
+        
+        // Buat ID unik (Random) agar bisa input layanan sama berkali-kali
+        let rowId = Date.now() + Math.random().toString(36).substr(2, 5);
 
-        if(chk.checked) {
-            qty.disabled = false; sty.disabled = false;
-            row.classList.add('active');
-        } else {
-            qty.disabled = true; sty.disabled = true;
-            qty.value = 1; sty.value = '-';
-            row.classList.remove('active');
+        // Siapkan Dropdown Terapis
+        let terapisOptions = `<option value="-">Pilih Terapis</option>`;
+        terapisData.forEach(t => {
+            terapisOptions += `<option value="${t.nama}">${t.nama}</option>`;
+        });
+
+        // Template HTML Baris Baru
+        let itemHTML = `
+            <div class="preview-item" id="row_${rowId}" style="flex-wrap:wrap; gap:10px;">
+                <input type="hidden" name="cart[${rowId}][id_layanan]" value="${id}">
+                <input type="hidden" name="cart[${rowId}][nama_layanan]" value="${nama}">
+                <input type="hidden" name="cart[${rowId}][harga]" value="${harga}">
+                
+                <input type="hidden" class="promo-trigger" 
+                       data-harga="${harga}" 
+                       data-promo-id="${promoId}" 
+                       data-diskon-tipe="${diskonTipe}" 
+                       data-diskon-nilai="${diskonNilai}">
+
+                <div style="flex: 2; min-width: 150px;">
+                    <b>${nama}</b><br>
+                    <span style="color:var(--primary); font-size:12px;">Rp ${parseInt(harga).toLocaleString()}</span>
+                </div>
+
+                <div style="flex: 1; min-width: 120px;">
+                    <select name="cart[${rowId}][terapis]" class="sty-select" style="width:100%;">
+                        ${terapisOptions}
+                    </select>
+                </div>
+
+                <div style="width: 30px; text-align:right;">
+                    <button type="button" onclick="removeRow('${rowId}')" style="background:#ef4444; color:white; border:none; border-radius:5px; padding:5px 10px; cursor:pointer;">X</button>
+                </div>
+            </div>
+        `;
+
+        // Masukkan ke layar
+        container.insertAdjacentHTML('beforeend', itemHTML);
+        toggleModal(false); // Tutup modal otomatis setelah pilih
+        reCalc(); // Hitung ulang total
+    }
+
+    function removeRow(rowId) {
+        document.getElementById('row_' + rowId).remove();
+        // Jika kosong, tampilkan pesan kosong lagi
+        if(document.getElementById('cartContainer').children.length <= 1) { 
+            document.getElementById('emptyCartMsg').style.display = 'block';
         }
         reCalc();
     }
 
     function reCalc() {
-        // 1. Ambil ID promo mana saja yang DICENTANG
+        // 1. Cek Promo apa saja yang dicentang di panel atas
         let selectedPromos = [];
         document.querySelectorAll('.promo-chk:checked').forEach(chk => {
-            selectedPromos.push(chk.value); 
+            selectedPromos.push(parseInt(chk.value)); 
         });
 
-        // 2. Loop hanya pada CHECKBOX LAYANAN (class: chk-layanan)
-        let checkboxes = document.querySelectorAll('.chk-layanan'); 
-        let subtotal = 0, diskon = 0, count = 0;
+        let subtotal = 0;
+        let diskonOtomatis = 0;
 
-        checkboxes.forEach(chk => {
-            if(chk.checked) { 
-                count++;
-                let id = chk.getAttribute('data-id');
-                let harga = parseInt(chk.getAttribute('data-harga'));
-                let qty = parseInt(document.getElementById('qty_' + id).value) || 1;
-                
-                let itemTotal = harga * qty;
-                subtotal += itemTotal;
+        // 2. Loop semua item yang ada di keranjang sekarang
+        document.querySelectorAll('.promo-trigger').forEach(el => {
+            let harga = parseInt(el.getAttribute('data-harga'));
+            subtotal += harga;
 
-                // Cek Promo
-                let promoId = chk.getAttribute('data-promo-id');
-                
-                if(promoId != '0' && selectedPromos.includes(promoId)) {
-                    let tipe = chk.getAttribute('data-diskon-tipe');
-                    let nilai = parseInt(chk.getAttribute('data-diskon-nilai'));
-                    
-                    if(tipe === 'persen') diskon += itemTotal * (nilai / 100);
-                    else diskon += nilai * qty;
+            // Hitung Diskon jika promo cocok
+            let pId = parseInt(el.getAttribute('data-promo-id'));
+            let pTipe = el.getAttribute('data-diskon-tipe');
+            let pNilai = parseInt(el.getAttribute('data-diskon-nilai'));
+
+            if (pId !== 0 && selectedPromos.includes(pId)) {
+                if (pTipe === 'persen') {
+                    diskonOtomatis += harga * (pNilai / 100);
+                } else {
+                    diskonOtomatis += pNilai;
                 }
             }
         });
 
-        // --- UPDATE DISKON MANUAL ---
+        // 3. Tambahkan Diskon Manual
         let manualInput = document.getElementById('diskon_manual');
         let manualDisc = manualInput ? (parseInt(manualInput.value) || 0) : 0;
         
-        // Gabungkan diskon promo + manual
-        let totalDiskon = diskon + manualDisc;
-
+        let totalDiskon = diskonOtomatis + manualDisc;
         let total = subtotal - totalDiskon;
-        if(total < 0) total = 0;
+        if (total < 0) total = 0;
 
+        // 4. Update Teks Total
         document.getElementById('txt_total').innerText = "Rp " + total.toLocaleString();
-        document.getElementById('txt_detail').innerText = "Subtotal: " + subtotal.toLocaleString() + " | Diskon: " + totalDiskon.toLocaleString();
-        document.getElementById('countSelected').innerText = count + " item";
-        updatePreview();
+        document.getElementById('txt_detail').innerText = `Subtotal: ${subtotal.toLocaleString()} | Diskon: ${totalDiskon.toLocaleString()}`;
     }
-
-    function updatePreview() {
-        // Hanya ambil checkbox LAYANAN yang dicentang
-        let checkboxes = document.querySelectorAll('.chk-layanan:checked'); 
-        let container = document.getElementById('previewContainer');
-        
-        if(checkboxes.length === 0) {
-            container.innerHTML = '<div style="text-align:center; color:#94a3b8; margin-top:20px;">Belum ada layanan.<br>Klik tombol cari di atas.</div>';
-            return;
-        }
-
-        let html = '';
-        checkboxes.forEach(chk => {
-            let id = chk.getAttribute('data-id');
-            let nama = chk.getAttribute('data-nama');
-            let harga = parseInt(chk.getAttribute('data-harga'));
-            let qty = document.getElementById('qty_' + id).value;
-            let styIdx = document.getElementById('sty_' + id).selectedIndex;
-            let styName = document.getElementById('sty_' + id).options[styIdx].text;
-            if(styName === 'Pilih Terapis') styName = '-';
-
-            html += `
-            <div class="preview-item">
-                <div>
-                    <b>${nama}</b> <span class="preview-badge">${qty}x</span>
-                    <div style="font-size:11px; color:#64748b;">${styName}</div>
-                </div>
-                <div style="font-weight:bold;">Rp ${(harga * qty).toLocaleString()}</div>
-            </div>`;
-        });
-        container.innerHTML = html;
-    }
-
+    
+    // Manual override harga (hanya supervisor)
     function manualUpdate(val) {
         if(val) document.getElementById('txt_total').innerText = "Rp " + parseInt(val).toLocaleString() + " (Manual)";
         else reCalc();
