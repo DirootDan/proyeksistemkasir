@@ -59,7 +59,6 @@ foreach ($data as $index => $row) {
 // 8. Tambahkan Footer Total
 fputcsv($output, []); // Baris kosong
 fputcsv($output, ['', '', '', '', '', '', '', 'TOTAL OMZET', $total_omzet]);
-
-// 9. Tutup stream
-fclose($output);
+// ini sudah dibuat
+fclose($output); 
 exit;
