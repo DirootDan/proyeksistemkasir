@@ -13,7 +13,7 @@ $stmt = $db->prepare($sql);
 $stmt->execute();
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Header HTTP untuk Download File CSV
+
 $filename = "Laporan_Salon_" . date('YmdHis') . ".csv";
 
 header('Content-Type: text/csv; charset=utf-8');
@@ -59,6 +59,6 @@ foreach ($data as $index => $row) {
 // 8. Tambahkan Footer Total
 fputcsv($output, []); // Baris kosong
 fputcsv($output, ['', '', '', '', '', '', '', 'TOTAL OMZET', $total_omzet]);
-// ini sudah dibuat
+// ini sudah dibuat 
 fclose($output); 
 exit;
